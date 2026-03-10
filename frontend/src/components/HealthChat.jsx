@@ -45,7 +45,7 @@ export const HealthChat = ({ token }) => {
     <>
       <Button
         data-testid="floating-chat-toggle-button"
-        className="fixed bottom-5 right-5 z-50 h-14 rounded-full bg-sky-600 px-5 shadow-[0_18px_45px_rgba(14,116,244,0.35)] hover:bg-sky-700"
+        className="fixed bottom-24 right-4 z-[90] h-14 rounded-full bg-sky-600 px-5 shadow-[0_18px_45px_rgba(14,116,244,0.35)] hover:bg-sky-700 md:bottom-8 md:right-28"
         onClick={() => setOpen((current) => !current)}
       >
         {open ? <X className="mr-2 h-4 w-4" /> : <MessageSquare className="mr-2 h-4 w-4" />}
@@ -55,7 +55,7 @@ export const HealthChat = ({ token }) => {
       {open ? (
         <Card
           data-testid="floating-chat-panel"
-          className="fixed bottom-24 right-5 z-50 flex h-[32rem] w-[min(92vw,24rem)] flex-col border-sky-100 bg-white/95 shadow-2xl backdrop-blur-xl"
+          className="fixed bottom-40 right-4 z-[90] flex h-[32rem] w-[min(92vw,24rem)] flex-col border-sky-100 bg-white/95 shadow-2xl backdrop-blur-xl md:bottom-24 md:right-28"
         >
           <CardHeader className="border-b border-sky-100 pb-4">
             <CardTitle className="flex items-center gap-3 text-lg text-slate-900">

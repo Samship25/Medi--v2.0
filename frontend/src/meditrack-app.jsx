@@ -1260,15 +1260,23 @@ const ProtectedApp = ({ token, user, onLogout, onSessionChange }) => {
   };
 
   const markTaken = async (medicineId) => {
-    await apiRequest({ method: "post", url: `/medicines/${medicineId}/mark-taken`, token });
-    toast.success("Medicine marked as taken.");
-    await refreshData();
+    try {
+      await apiRequest({ method: "post", url: `/medicines/${medicineId}/mark-taken`, token });
+      toast.success("Medicine marked as taken.");
+      await refreshData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Unable to mark medicine as taken.");
+    }
   };
 
   const deleteMedicine = async (medicineId) => {
-    await apiRequest({ method: "delete", url: `/medicines/${medicineId}`, token });
-    toast.success("Medicine removed.");
-    await refreshData();
+    try {
+      await apiRequest({ method: "delete", url: `/medicines/${medicineId}`, token });
+      toast.success("Medicine removed.");
+      await refreshData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Unable to remove medicine.");
+    }
   };
 
   const addRecord = async (payload, onDone) => {
@@ -1283,9 +1291,13 @@ const ProtectedApp = ({ token, user, onLogout, onSessionChange }) => {
   };
 
   const deleteRecord = async (recordId) => {
-    await apiRequest({ method: "delete", url: `/records/${recordId}`, token });
-    toast.success("Record deleted.");
-    await refreshData();
+    try {
+      await apiRequest({ method: "delete", url: `/records/${recordId}`, token });
+      toast.success("Record deleted.");
+      await refreshData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Unable to delete record.");
+    }
   };
 
   const createReport = async (payload, onDone) => {
