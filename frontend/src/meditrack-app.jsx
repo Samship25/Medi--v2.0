@@ -149,10 +149,8 @@ const savePdfToDevice = async (blob, filename) => {
       await writable.close();
       toast.success("PDF saved to your device.");
       return true;
-    } catch (error) {
-      if (error?.name !== "AbortError") {
-        toast.error("Direct file save was blocked. Trying another save method...");
-      }
+    } catch {
+      // silently fall back to share/download below
     }
   }
 
@@ -167,10 +165,8 @@ const savePdfToDevice = async (blob, filename) => {
         toast.success("Use the share sheet to save the PDF to Files or Downloads.");
         return true;
       }
-    } catch (error) {
-      if (error?.name !== "AbortError") {
-        toast.error("Native save/share was blocked. Trying browser download instead...");
-      }
+    } catch {
+      // silently fall back to browser download below
     }
   }
 
