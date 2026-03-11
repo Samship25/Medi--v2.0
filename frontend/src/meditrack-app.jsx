@@ -130,6 +130,55 @@ const downloadBlobFile = (blob, filename) => {
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
 };
 
+const savePdfToDevice = async (blob, filename) => {
+  const pdfFile = new File([blob], filename, { type: "application/pdf" });
+
+  if (window.showSaveFilePicker) {
+    try {
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: "PDF document",
+            accept: { "application/pdf": [".pdf"] },
+          },
+        ],
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      toast.success("PDF saved to your device.");
+      return true;
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        toast.error("Direct file save was blocked. Trying another save method...");
+      }
+    }
+  }
+
+  if (navigator.canShare) {
+    try {
+      if (navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: filename,
+          text: "Save or share your Medi Track report PDF.",
+        });
+        toast.success("Use the share sheet to save the PDF to Files or Downloads.");
+        return true;
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        toast.error("Native save/share was blocked. Trying browser download instead...");
+      }
+    }
+  }
+
+  downloadBlobFile(blob, filename);
+  toast.success(isIosDevice() ? "PDF opened. Use the share button to Save to Files." : "PDF download started.");
+  return true;
+};
+
 const copyTextToClipboard = async (text) => {
   if (navigator.clipboard?.writeText) {
     try {
@@ -168,7 +217,7 @@ const copyTextToClipboard = async (text) => {
   return false;
 };
 
-const makePdf = (report, filename = "medi-track-report.pdf") => {
+const makePdf = async (report, filename = "medi-track-report.pdf") => {
   try {
     const doc = new jsPDF();
     const payload = report.payload || report;
@@ -207,8 +256,7 @@ const makePdf = (report, filename = "medi-track-report.pdf") => {
     });
 
     const pdfBlob = doc.output("blob");
-    downloadBlobFile(pdfBlob, filename);
-    toast.success(isIosDevice() ? "PDF opened in a new tab for saving or sharing." : "PDF download started.");
+    await savePdfToDevice(pdfBlob, filename);
   } catch {
     toast.error("Unable to prepare the PDF right now.");
   }
