@@ -3,6 +3,7 @@ import os
 from typing import List
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.openai import OpenAISpeechToText
 
 
 MEDICINE_EXTRACTION_PROMPT = """
@@ -92,3 +93,20 @@ async def generate_chat_reply(user_id: str, history: List[dict], user_message: s
             "I’m unable to reach the AI guidance service right now. Please review the label, "
             "follow your prescription exactly, and confirm any dosing questions with your doctor or pharmacist."
         )
+
+
+async def transcribe_voice_note(file_path: str) -> str:
+    try:
+        stt = OpenAISpeechToText(api_key=os.environ["EMERGENT_LLM_KEY"])
+        with open(file_path, "rb") as audio_file:
+            response = await stt.transcribe(
+                file=audio_file,
+                model="whisper-1",
+                response_format="json",
+                language="en",
+                prompt="This is a short medicine voice note that may contain medication names, dosage, and timing.",
+                temperature=0.0,
+            )
+        return (response.text or "").strip()
+    except Exception:
+        return ""

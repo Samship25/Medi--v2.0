@@ -1,11 +1,12 @@
 import json
 import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,7 +14,7 @@ import logging
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.cors import CORSMiddleware
 
-from ai_service import analyze_interactions_dynamic, extract_medicines_from_text, generate_chat_reply
+from ai_service import analyze_interactions_dynamic, extract_medicines_from_text, generate_chat_reply, transcribe_voice_note
 from auth_utils import create_access_token, decode_access_token, hash_password, verify_password
 from schemas import (
     AuthResponse,
@@ -471,6 +472,35 @@ async def chat(input: ChatRequest, user=Depends(get_user_from_token)):
     assistant_doc["created_at"] = assistant_doc["created_at"].isoformat()
     await db.chat_messages.insert_one({**assistant_doc})
     return {"reply": reply, "messages": [user_doc, assistant_doc]}
+
+
+@api_router.post("/voice/transcribe")
+async def transcribe_voice(file: UploadFile = File(...), user=Depends(get_user_from_token)):
+    filename = file.filename or "voice-note.webm"
+    suffix = Path(filename).suffix or ".webm"
+    payload = await file.read()
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="Audio file is empty")
+
+    if len(payload) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio file exceeds the 25 MB limit")
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(payload)
+            temp_path = temp_file.name
+
+        transcript = await transcribe_voice_note(temp_path)
+        if not transcript:
+            raise HTTPException(status_code=422, detail="Unable to transcribe this voice note")
+
+        return {"transcript": transcript, "model": "whisper-1"}
+    finally:
+        await file.close()
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @api_router.get("/admin/overview")

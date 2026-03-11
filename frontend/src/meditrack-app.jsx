@@ -105,43 +105,113 @@ const blankProfile = {
   profile_photo: "",
 };
 
-const makePdf = (report, filename = "medi-track-report.pdf") => {
-  const doc = new jsPDF();
-  const payload = report.payload || report;
-  let y = 18;
+const isIosDevice = () => {
+  if (typeof window === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(window.navigator.userAgent) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+};
 
-  const writeLine = (text, offset = 8) => {
-    const lines = doc.splitTextToSize(text, 175);
-    doc.text(lines, 18, y);
-    y += lines.length * 6 + offset;
-    if (y > 270) {
-      doc.addPage();
-      y = 18;
+const downloadBlobFile = (blob, filename) => {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  if (isIosDevice()) {
+    const popup = window.open(blobUrl, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      window.location.href = blobUrl;
     }
-  };
-
-  doc.setFontSize(18);
-  doc.text("Medi Track Medical Report", 18, y);
-  y += 10;
-  doc.setFontSize(11);
-  writeLine(`Generated: ${payload.generated_at || report.created_at || new Date().toISOString()}`, 6);
-
-  if (payload.user) {
-    writeLine(`Patient: ${payload.user.name} | Blood Group: ${payload.user.blood_group} | Email: ${payload.user.email}`);
   }
-  writeLine(`Medicines (${payload.medicines?.length || 0})`, 4);
-  (payload.medicines || []).forEach((medicine) => {
-    writeLine(`• ${medicine.medicine_name} — ${medicine.dosage} — ${medicine.frequency}`);
-  });
-  writeLine(`Interaction Alerts (${payload.alerts?.length || 0})`, 4);
-  (payload.alerts || []).forEach((alert) => {
-    writeLine(`• ${alert.severity_level.toUpperCase()}: ${alert.medicine_combination.join(" + ")} — ${alert.explanation}`);
-  });
-  writeLine(`Medical Records (${payload.records?.length || 0})`, 4);
-  (payload.records || []).forEach((record) => {
-    writeLine(`• ${record.title}: ${record.past_treatments}`);
-  });
-  doc.save(filename);
+
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+};
+
+const copyTextToClipboard = async (text) => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Share link copied.");
+      return true;
+    } catch {
+      // fall through to legacy copy below
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  try {
+    const copied = document.execCommand("copy");
+    if (copied) {
+      toast.success("Share link copied.");
+      return true;
+    }
+  } catch {
+    // noop
+  } finally {
+    document.body.removeChild(textarea);
+  }
+
+  toast.error("Unable to copy automatically. Please long-press or select the link manually.");
+  return false;
+};
+
+const makePdf = (report, filename = "medi-track-report.pdf") => {
+  try {
+    const doc = new jsPDF();
+    const payload = report.payload || report;
+    let y = 18;
+
+    const writeLine = (text, offset = 8) => {
+      const lines = doc.splitTextToSize(text, 175);
+      doc.text(lines, 18, y);
+      y += lines.length * 6 + offset;
+      if (y > 270) {
+        doc.addPage();
+        y = 18;
+      }
+    };
+
+    doc.setFontSize(18);
+    doc.text("Medi Track Medical Report", 18, y);
+    y += 10;
+    doc.setFontSize(11);
+    writeLine(`Generated: ${payload.generated_at || report.created_at || new Date().toISOString()}`, 6);
+
+    if (payload.user) {
+      writeLine(`Patient: ${payload.user.name} | Blood Group: ${payload.user.blood_group} | Email: ${payload.user.email}`);
+    }
+    writeLine(`Medicines (${payload.medicines?.length || 0})`, 4);
+    (payload.medicines || []).forEach((medicine) => {
+      writeLine(`• ${medicine.medicine_name} — ${medicine.dosage} — ${medicine.frequency}`);
+    });
+    writeLine(`Interaction Alerts (${payload.alerts?.length || 0})`, 4);
+    (payload.alerts || []).forEach((alert) => {
+      writeLine(`• ${alert.severity_level.toUpperCase()}: ${alert.medicine_combination.join(" + ")} — ${alert.explanation}`);
+    });
+    writeLine(`Medical Records (${payload.records?.length || 0})`, 4);
+    (payload.records || []).forEach((record) => {
+      writeLine(`• ${record.title}: ${record.past_treatments}`);
+    });
+
+    const pdfBlob = doc.output("blob");
+    downloadBlobFile(pdfBlob, filename);
+    toast.success(isIosDevice() ? "PDF opened in a new tab for saving or sharing." : "PDF download started.");
+  } catch {
+    toast.error("Unable to prepare the PDF right now.");
+  }
 };
 
 const StatCard = ({ title, value, helper, icon: Icon, testId }) => (
@@ -649,38 +719,76 @@ const DashboardPage = ({ dashboard, medicineForm, setMedicineForm, onAddMedicine
 const CameraCaptureCard = ({ onCapture }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [capturedImage, setCapturedImage] = useState("");
+  const [capturedPreview, setCapturedPreview] = useState("");
+  const [capturedSource, setCapturedSource] = useState(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState("Open the camera or use your device photo capture.");
 
   const stopCamera = () => {
     streamRef.current?.getTracks()?.forEach((track) => track.stop());
     streamRef.current = null;
+    setCameraReady(false);
   };
 
   useEffect(() => stopCamera, []);
 
   const startCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("Live camera is unavailable here. Please use device photo capture below.");
+      toast.error("Live camera is not supported in this browser.");
+      return;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      stopCamera();
+      setCapturedPreview("");
+      setCapturedSource(null);
+      setCameraStatus("Requesting camera permission...");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
+      setCameraReady(true);
+      setCameraStatus("Camera ready. Frame the prescription, then capture it.");
     } catch {
-      toast.error("Camera access was blocked.");
+      setCameraStatus("Live camera could not start. Use device photo capture below instead.");
+      toast.error("Unable to start the live camera. Use your device photo capture below.");
     }
   };
 
   const captureFrame = () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !cameraReady || video.readyState < 2) {
+      toast.error("Open the camera and wait for the preview before capturing.");
+      return;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     const context = canvas.getContext("2d");
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/png");
-    setCapturedImage(dataUrl);
+    setCapturedSource(dataUrl);
+    setCapturedPreview(dataUrl);
+    setCameraStatus("Photo captured. Review it, retake if needed, or use it for OCR.");
     stopCamera();
+  };
+
+  const handleCapturedFile = (file) => {
+    if (!file) return;
+    stopCamera();
+    const nextPreview = URL.createObjectURL(file);
+    setCapturedSource(file);
+    setCapturedPreview(nextPreview);
+    setCameraStatus("Device photo selected. Review it, then use it for OCR.");
+  };
+
+  const resetCapture = () => {
+    setCapturedPreview("");
+    setCapturedSource(null);
+    setCameraStatus("Open the camera or use your device photo capture.");
   };
 
   return (
@@ -693,18 +801,31 @@ const CameraCaptureCard = ({ onCapture }) => {
         <Button data-testid="camera-capture-button" className="bg-sky-600 hover:bg-sky-700" onClick={captureFrame}>
           Capture prescription
         </Button>
-        <Button data-testid="camera-retake-button" variant="outline" className="border-sky-200" onClick={() => setCapturedImage("") }>
+        <Button data-testid="camera-retake-button" variant="outline" className="border-sky-200" onClick={resetCapture}>
           Retake
         </Button>
-        {capturedImage ? (
-          <Button data-testid="camera-use-image-button" variant="outline" className="border-sky-200" onClick={() => onCapture(capturedImage)}>
+        {capturedPreview ? (
+          <Button data-testid="camera-use-image-button" variant="outline" className="border-sky-200" onClick={() => onCapture(capturedSource || capturedPreview)}>
             Use captured image
           </Button>
         ) : null}
       </div>
+      <label data-testid="camera-device-capture-label" className="mt-4 flex cursor-pointer flex-col gap-2 rounded-3xl border border-dashed border-sky-200 bg-white px-4 py-4 text-sm text-slate-500">
+        <span className="font-medium text-slate-900">Use device camera / gallery fallback</span>
+        <span>Works when live camera access is blocked on mobile or desktop browsers.</span>
+        <input
+          data-testid="camera-device-capture-input"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="mt-1 block w-full text-sm"
+          onChange={(event) => handleCapturedFile(event.target.files?.[0])}
+        />
+      </label>
+      <p data-testid="camera-status-text" className="mt-4 text-sm text-slate-500">{cameraStatus}</p>
       <div className="mt-4 overflow-hidden rounded-[1.6rem] bg-slate-950/90">
-        {capturedImage ? (
-          <img data-testid="camera-preview-image" src={capturedImage} alt="Captured prescription" className="h-72 w-full object-contain" />
+        {capturedPreview ? (
+          <img data-testid="camera-preview-image" src={capturedPreview} alt="Captured prescription" className="h-72 w-full object-contain" />
         ) : (
           <video data-testid="camera-live-preview" ref={videoRef} autoPlay playsInline muted className="h-72 w-full object-cover" />
         )}
@@ -718,34 +839,75 @@ const BarcodeScannerCard = ({ token, onAutoAdd }) => {
   const controlsRef = useRef(null);
   const [active, setActive] = useState(false);
   const [lastCode, setLastCode] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [scanStatus, setScanStatus] = useState("Start the live scanner, upload a barcode image, or enter the code manually.");
+
+  const handleDetectedCode = async (code) => {
+    if (!code) return;
+    setLastCode(code);
+    setBarcodeInput(code);
+    setActive(false);
+    controlsRef.current?.stop();
+    try {
+      const response = await apiRequest({ method: "get", url: `/medicines/barcode/${code}`, token });
+      await onAutoAdd({
+        ...blankMedicine,
+        ...response.item,
+        source: "barcode",
+        barcode: code,
+      });
+      setScanStatus(`Barcode matched ${response.item.medicine_name}.`);
+      toast.success(`Barcode matched ${response.item.medicine_name}`);
+    } catch {
+      setScanStatus("Barcode lookup failed. Try a clearer image or manual entry.");
+      toast.error("Barcode lookup failed.");
+    }
+  };
 
   useEffect(() => {
     const startScan = async () => {
       if (!active || !videoRef.current) return;
-      const reader = new BrowserMultiFormatReader();
-      controlsRef.current = await reader.decodeFromVideoDevice(undefined, videoRef.current, async (result) => {
-        if (!result) return;
-        const code = result.getText();
-        setLastCode(code);
+      setScanStatus("Starting live barcode scanner...");
+      try {
+        const reader = new BrowserMultiFormatReader();
+        controlsRef.current = await reader.decodeFromVideoDevice(undefined, videoRef.current, async (result) => {
+          if (!result) return;
+          await handleDetectedCode(result.getText());
+        });
+        setScanStatus("Scanner ready. Point the camera at the medicine barcode.");
+      } catch {
         setActive(false);
-        controlsRef.current?.stop();
-        try {
-          const response = await apiRequest({ method: "get", url: `/medicines/barcode/${code}`, token });
-          onAutoAdd({
-            ...blankMedicine,
-            ...response.item,
-            source: "barcode",
-            barcode: code,
-          });
-          toast.success(`Barcode matched ${response.item.medicine_name}`);
-        } catch {
-          toast.error("Barcode lookup failed.");
-        }
-      });
+        setScanStatus("Live scanning is unavailable here. Upload a barcode image or enter the code manually.");
+        toast.error("Unable to start live barcode scanning.");
+      }
     };
     startScan();
     return () => controlsRef.current?.stop();
-  }, [active, onAutoAdd, token]);
+  }, [active, token]);
+
+  const decodeBarcodeImage = async (file) => {
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = async () => {
+      try {
+        const reader = new BrowserMultiFormatReader();
+        const result = await reader.decodeFromImageElement(image);
+        await handleDetectedCode(result.getText());
+      } catch {
+        setScanStatus("No barcode was detected in that image.");
+        toast.error("No barcode found in the uploaded image.");
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      setScanStatus("That barcode image could not be read.");
+      toast.error("Unable to read the uploaded barcode image.");
+    };
+    image.src = objectUrl;
+  };
 
   return (
     <div className="rounded-3xl border border-sky-100 bg-slate-50/90 p-4">
@@ -759,7 +921,28 @@ const BarcodeScannerCard = ({ token, onAutoAdd }) => {
         </Button>
         {lastCode ? <p data-testid="barcode-last-code" className="text-sm text-slate-500">Last code: {lastCode}</p> : null}
       </div>
+      <p data-testid="barcode-status-text" className="mt-4 text-sm text-slate-500">{scanStatus}</p>
       <video data-testid="barcode-video-preview" ref={videoRef} autoPlay playsInline muted className="mt-4 h-72 w-full rounded-[1.6rem] bg-slate-950 object-cover" />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <label data-testid="barcode-image-upload-label" className="rounded-3xl border border-dashed border-sky-200 bg-white px-4 py-4 text-sm text-slate-500">
+          <span className="font-medium text-slate-900">Upload a barcode image</span>
+          <input
+            data-testid="barcode-image-upload-input"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="mt-2 block w-full text-sm"
+            onChange={(event) => decodeBarcodeImage(event.target.files?.[0])}
+          />
+        </label>
+        <div className="rounded-3xl border border-sky-100 bg-white p-4">
+          <p className="text-sm font-medium text-slate-900">Manual barcode lookup</p>
+          <Input data-testid="barcode-manual-input" className="mt-3" placeholder="Enter barcode digits" value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} />
+          <Button data-testid="barcode-manual-lookup-button" className="mt-3 w-full bg-sky-600 hover:bg-sky-700" onClick={() => handleDetectedCode(barcodeInput.trim())}>
+            Lookup barcode
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -769,6 +952,13 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
   const [ocrPreview, setOcrPreview] = useState("");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("Use live speech, record a short voice note, or paste spoken medicine text manually.");
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceManualInput, setVoiceManualInput] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const voiceStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
 
   const importText = async (rawText, source) => {
     if (!rawText?.trim()) {
@@ -779,7 +969,7 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
       const response = await apiRequest({ method: "post", url: "/medicines/import-from-text", token, data: { raw_text: rawText, source } });
       toast.success(`${response.items.length} medicine item(s) added`);
       setRecordForm((current) => ({ ...current, prescription_text: rawText }));
-      onAddMedicine(null, true);
+      await onAddMedicine(null, true);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Import failed");
     }
@@ -800,21 +990,117 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
     }
   };
 
+  const stopVoiceStream = () => {
+    voiceStreamRef.current?.getTracks()?.forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+  };
+
+  const transcribeAudioBlob = async (audioBlob) => {
+    const formData = new FormData();
+    formData.append("file", audioBlob, audioBlob.type.includes("mp4") ? "voice-note.m4a" : "voice-note.webm");
+
+    setVoiceLoading(true);
+    setVoiceStatus("Uploading voice note for transcription...");
+    try {
+      const response = await apiRequest({ method: "post", url: "/voice/transcribe", token, data: formData });
+      setVoiceTranscript(response.transcript);
+      setVoiceManualInput(response.transcript);
+      setVoiceStatus(`Transcribed with ${response.model}. Medicines are being extracted now.`);
+      await importText(response.transcript, "voice");
+    } catch (error) {
+      setVoiceStatus("Voice note transcription failed. Try again or paste the spoken text manually.");
+      toast.error(error.response?.data?.detail || "Unable to transcribe the voice note.");
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
   const startVoiceRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast.error("Voice recognition is not supported in this browser.");
+      setVoiceStatus("Live speech recognition is unavailable in this browser. Use Record voice note instead.");
+      toast.error("Live speech recognition is not supported here. Try Record voice note.");
       return;
     }
+
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setVoiceStatus("Listening now. Speak the medicine names clearly.");
     recognition.onresult = async (event) => {
       const transcript = event.results[0][0].transcript;
       setVoiceTranscript(transcript);
+      setVoiceManualInput(transcript);
+      setVoiceStatus("Speech captured. Importing medicines now.");
       await importText(transcript, "voice");
+    };
+    recognition.onerror = () => {
+      setVoiceStatus("Live speech capture failed. Try Record voice note instead.");
+      toast.error("Voice capture failed. Please try the record voice note option.");
+    };
+    recognition.onend = () => {
+      setVoiceStatus((current) => current === "Listening now. Speak the medicine names clearly." ? "Voice capture ended." : current);
     };
     recognition.start();
   };
+
+  const toggleVoiceRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      setVoiceStatus("Finishing voice note...");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceStatus("Audio recording is unavailable in this browser. Paste spoken text manually below.");
+      toast.error("Audio recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      voiceChunksRef.current = [];
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/mp4";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onerror = () => {
+        stopVoiceStream();
+        setIsRecording(false);
+        setVoiceStatus("Recording failed. Try again or paste the spoken text manually.");
+        toast.error("Voice recording failed.");
+      };
+      recorder.onstop = async () => {
+        const voiceBlob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        stopVoiceStream();
+        if (voiceBlob.size > 0) {
+          await transcribeAudioBlob(voiceBlob);
+        } else {
+          setVoiceStatus("No voice note was captured.");
+          toast.error("No voice note was captured.");
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setVoiceStatus("Recording voice note... Tap again to stop and transcribe.");
+    } catch {
+      stopVoiceStream();
+      setIsRecording(false);
+      setVoiceStatus("Microphone permission was blocked. Paste spoken text manually if needed.");
+      toast.error("Unable to access the microphone.");
+    }
+  };
+
+  useEffect(() => stopVoiceStream, []);
 
   return (
     <div className="space-y-6">
@@ -849,9 +1135,26 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
               <TabsContent value="barcode"><BarcodeScannerCard token={token} onAutoAdd={onAddMedicine} /></TabsContent>
               <TabsContent value="voice">
                 <div className="rounded-3xl border border-sky-100 bg-slate-50/90 p-4">
-                  <Button data-testid="voice-start-button" className="bg-sky-600 hover:bg-sky-700" onClick={startVoiceRecognition}>
-                    <Mic className="mr-2 h-4 w-4" />
-                    Start medicine voice input
+                  <div className="flex flex-wrap gap-3">
+                    <Button data-testid="voice-start-button" className="bg-sky-600 hover:bg-sky-700" onClick={startVoiceRecognition} disabled={voiceLoading}>
+                      <Mic className="mr-2 h-4 w-4" />
+                      Live speech input
+                    </Button>
+                    <Button data-testid="voice-record-button" variant="outline" className="border-sky-200" onClick={toggleVoiceRecording} disabled={voiceLoading}>
+                      <Volume2 className="mr-2 h-4 w-4" />
+                      {isRecording ? "Stop recording" : "Record voice note"}
+                    </Button>
+                  </div>
+                  <p data-testid="voice-status-text" className="mt-4 text-sm text-slate-500">{voiceLoading ? "Processing your voice note..." : voiceStatus}</p>
+                  <Textarea
+                    data-testid="voice-manual-input"
+                    className="mt-4"
+                    placeholder="Or paste the medicine names you spoke, then import them manually"
+                    value={voiceManualInput}
+                    onChange={(event) => setVoiceManualInput(event.target.value)}
+                  />
+                  <Button data-testid="voice-manual-import-button" className="mt-3 bg-sky-600 hover:bg-sky-700" onClick={() => importText(voiceManualInput, "voice")} disabled={voiceLoading}>
+                    Import spoken text
                   </Button>
                   {voiceTranscript ? <p data-testid="voice-transcript" className="mt-4 rounded-2xl bg-white p-4 text-sm text-slate-600">{voiceTranscript}</p> : null}
                 </div>
@@ -972,7 +1275,7 @@ const SharingPage = ({ reports, onCreateReport }) => {
                       <span className="font-medium text-slate-900">Share URL:</span> {shareUrl}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
-                      <Button data-testid={`copy-share-link-button-${report.id}`} variant="outline" className="border-sky-200" onClick={() => navigator.clipboard.writeText(shareUrl).then(() => toast.success("Share link copied"))}>
+                      <Button data-testid={`copy-share-link-button-${report.id}`} variant="outline" className="border-sky-200" onClick={() => copyTextToClipboard(shareUrl)}>
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Copy link
                       </Button>
