@@ -841,15 +841,22 @@ const BarcodeScannerCard = ({ token, onAutoAdd }) => {
   const [lastCode, setLastCode] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
   const [scanStatus, setScanStatus] = useState("Start the live scanner, upload a barcode image, or enter the code manually.");
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
 
   const handleDetectedCode = async (code) => {
-    if (!code) return;
+    if (!code) {
+      toast.error("Enter or scan a barcode first.");
+      return;
+    }
     setLastCode(code);
     setBarcodeInput(code);
     setActive(false);
     controlsRef.current?.stop();
+    setBarcodeLoading(true);
+    setScanStatus("Looking up that barcode...");
     try {
       const response = await apiRequest({ method: "get", url: `/medicines/barcode/${code}`, token });
+      setScanStatus(`Barcode found: ${response.item.medicine_name}. Adding it to your medicine list...`);
       await onAutoAdd({
         ...blankMedicine,
         ...response.item,
@@ -861,6 +868,8 @@ const BarcodeScannerCard = ({ token, onAutoAdd }) => {
     } catch {
       setScanStatus("Barcode lookup failed. Try a clearer image or manual entry.");
       toast.error("Barcode lookup failed.");
+    } finally {
+      setBarcodeLoading(false);
     }
   };
 
@@ -938,8 +947,8 @@ const BarcodeScannerCard = ({ token, onAutoAdd }) => {
         <div className="rounded-3xl border border-sky-100 bg-white p-4">
           <p className="text-sm font-medium text-slate-900">Manual barcode lookup</p>
           <Input data-testid="barcode-manual-input" className="mt-3" placeholder="Enter barcode digits" value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} />
-          <Button data-testid="barcode-manual-lookup-button" className="mt-3 w-full bg-sky-600 hover:bg-sky-700" onClick={() => handleDetectedCode(barcodeInput.trim())}>
-            Lookup barcode
+          <Button data-testid="barcode-manual-lookup-button" className="mt-3 w-full bg-sky-600 hover:bg-sky-700" onClick={() => handleDetectedCode(barcodeInput.trim())} disabled={barcodeLoading}>
+            {barcodeLoading ? "Looking up barcode..." : "Lookup barcode"}
           </Button>
         </div>
       </div>
@@ -1015,7 +1024,7 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
     }
   };
 
-  const startVoiceRecognition = () => {
+  const startVoiceRecognition = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setVoiceStatus("Live speech recognition is unavailable in this browser. Use Record voice note instead.");
@@ -1023,10 +1032,22 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
       return;
     }
 
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach((track) => track.stop());
+      } catch {
+        setVoiceStatus("Microphone permission is blocked. Use Record voice note or paste the spoken text manually.");
+        toast.error("Microphone permission is blocked.");
+        return;
+      }
+    }
+
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    setVoiceStatus("Starting live speech input...");
     recognition.onstart = () => setVoiceStatus("Listening now. Speak the medicine names clearly.");
     recognition.onresult = async (event) => {
       const transcript = event.results[0][0].transcript;
@@ -1042,7 +1063,12 @@ const RecordsPage = ({ token, records, onAddMedicine, onAddRecord, onDeleteRecor
     recognition.onend = () => {
       setVoiceStatus((current) => current === "Listening now. Speak the medicine names clearly." ? "Voice capture ended." : current);
     };
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setVoiceStatus("Live speech input could not start. Use Record voice note instead.");
+      toast.error("Unable to start live speech input.");
+    }
   };
 
   const toggleVoiceRecording = async () => {
