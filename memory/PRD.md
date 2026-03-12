@@ -47,6 +47,11 @@ Create a full-stack web application called "Medi Track" for medicine tracking, m
 - Added IndexedDB caching for offline-friendly data reads
 - Self-tested backend APIs via curl and frontend flows via screenshots; fixed chat widget overlap issue after agent test feedback
 
+### 2026-03-12
+- Added backend wheel packaging support using `pyproject.toml` and an installable `meditrack-backend` Python package wrapper
+- Built verified wheel artifact at `/app/backend/dist/meditrack_backend-0.1.0-py3-none-any.whl`
+- Added backend packaging verification tests for wheel build, artifact existence, isolated install, and import smoke checks
+
 ## Prioritized Backlog
 ### P0
 - Real Firebase Google auth integration when Firebase credentials are provided
