@@ -1,0 +1,50 @@
+[
+  {
+    "id": "rule-warfarin-ibuprofen",
+    "medicines": ["warfarin", "ibuprofen"],
+    "severity_level": "severe",
+    "explanation": "This combination can significantly increase bleeding risk.",
+    "safety_recommendation": "Avoid combining unless specifically approved by a clinician. Watch for bruising, dark stools, or bleeding.",
+    "organ_effects": "Blood clotting"
+  },
+  {
+    "id": "rule-lisinopril-spironolactone",
+    "medicines": ["lisinopril", "spironolactone"],
+    "severity_level": "severe",
+    "explanation": "Combined use may raise potassium and affect kidney function.",
+    "safety_recommendation": "Use only with medical supervision and monitor potassium and kidney labs.",
+    "organ_effects": "Kidneys, heart rhythm"
+  },
+  {
+    "id": "rule-aspirin-ibuprofen",
+    "medicines": ["aspirin", "ibuprofen"],
+    "severity_level": "moderate",
+    "explanation": "This pairing can increase stomach irritation and may reduce aspirin’s protective effect.",
+    "safety_recommendation": "Take only if instructed and ask a clinician about timing and stomach protection.",
+    "organ_effects": "Stomach lining"
+  },
+  {
+    "id": "rule-paracetamol-alcohol",
+    "medicines": ["paracetamol", "alcohol"],
+    "severity_level": "moderate",
+    "explanation": "Frequent alcohol intake with paracetamol can stress the liver.",
+    "safety_recommendation": "Avoid alcohol and keep within recommended dose limits.",
+    "organ_effects": "Liver"
+  },
+  {
+    "id": "rule-sertraline-ibuprofen",
+    "medicines": ["sertraline", "ibuprofen"],
+    "severity_level": "moderate",
+    "explanation": "This combination may increase the risk of stomach bleeding.",
+    "safety_recommendation": "Use carefully and speak with a clinician if you need frequent pain relief.",
+    "organ_effects": "Stomach lining"
+  },
+  {
+    "id": "rule-metformin-alcohol",
+    "medicines": ["metformin", "alcohol"],
+    "severity_level": "mild",
+    "explanation": "Alcohol may worsen stomach upset and low blood sugar risk for some people on metformin.",
+    "safety_recommendation": "Limit alcohol and monitor how you feel after taking the medicine.",
+    "organ_effects": "Metabolic balance"
+  }
+]

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meditrack-backend"
+version = "0.1.0"
+description = "Installable Medi Track FastAPI backend package"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+meditrack-backend = "meditrack_backend.__main__:run"
+
+[tool.setuptools]
+packages = ["meditrack_backend"]
+py-modules = ["server", "ai_service", "auth_utils", "schemas"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+meditrack_backend = ["drug_interactions.json"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
